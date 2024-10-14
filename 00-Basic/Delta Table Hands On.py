@@ -495,12 +495,6 @@ display(dbutils.fs.ls('dbfs:/user/hive/warehouse/customer_json_delta'))
 # MAGIC   from order_flat
 # MAGIC )
 # MAGIC select * from order_for_pivot
-# MAGIC -- PIVOT (
-# MAGIC --   sum(quantity) for bookid in (
-# MAGIC --     'B06','B10','B08','B07','B03','B05','B02','B11','B09','B12','B01','B04'
-# MAGIC --   )
-# MAGIC -- )
-# MAGIC
 # MAGIC ;
 
 # COMMAND ----------
@@ -508,11 +502,7 @@ display(dbutils.fs.ls('dbfs:/user/hive/warehouse/customer_json_delta'))
 # MAGIC %sql
 # MAGIC with order_flat as (select customer_id, explode(books) as books from orders)
 # MAGIC , order_for_pivot (
-# MAGIC   select customer_id
-# MAGIC       , books.book_id as bookid
-# MAGIC       , books.quantity as quantity
-# MAGIC       , books.subtotal 
-# MAGIC   from order_flat
+# MAGIC   select customer_id , books.book_id as bookid , books.quantity as quantity, books.subtotal from order_flat
 # MAGIC )
 # MAGIC select * from order_for_pivot
 # MAGIC PIVOT (
