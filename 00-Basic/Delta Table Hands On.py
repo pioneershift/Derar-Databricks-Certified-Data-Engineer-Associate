@@ -1,0 +1,327 @@
+# Databricks notebook source
+# MAGIC %md
+# MAGIC All files copied to *dbfs:/mnt/demo-datasets/bookstore*
+
+# COMMAND ----------
+
+dataset_bookstore='dbfs:/mnt/demo-datasets/bookstore'
+data_catalog = 'hive_metastore'
+spark.conf.set(f"dataset.bookstore", dataset_bookstore)
+spark.sql(f"USE CATALOG hive_metastore")
+
+# COMMAND ----------
+
+display(dbutils.fs.ls(f'{dataset_bookstore}/'))
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a JSON File
+# MAGIC SELECT *,input_file_name() FROM json.`${dataset.bookstore}/customers-json/`; -- 1700 records - query the folder
+# MAGIC SELECT *,input_file_name() FROM json.`${dataset.bookstore}/customers-json/export_*.json`; -- 1700 records - query the file with wildcard
+# MAGIC SELECT *,input_file_name() FROM json.`${dataset.bookstore}/customers-json/export_001.json`; -- 300 records - query a specific file
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a JSON File
+# MAGIC SELECT customer_id,email,profile FROM json.`${dataset.bookstore}/customers-json/`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a Binary File
+# MAGIC SELECT * FROM binaryFile.`${dataset.bookstore}/customers-json/`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a TEXT File
+# MAGIC SELECT * FROM text.`${dataset.bookstore}/books-csv/`
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a parquet file
+# MAGIC SELECT * FROM PARQUET.`${dataset.bookstore}/orders/`
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a CSV File
+# MAGIC SELECT * FROM csv.`${dataset.bookstore}/books-csv/`
+# MAGIC ;
+# MAGIC -- does not mention the schema
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC For reading CSV files with specific options (like delimiter), you would typically use the spark.read option in a Databricks notebook cell using PySpark or use the CREATE TABLE statement in SQL with options and then query that table. Since your environment is Databricks SQL and you're encountering a syntax error with OPTIONS, you might consider an alternative approach if you're working within a SQL notebook.
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- Reading a CSV File with Options
+# MAGIC CREATE TABLE books_csv_options
+# MAGIC (book_id String, title String, author String, category String, price Double)
+# MAGIC USING csv
+# MAGIC OPTIONS (
+# MAGIC   header = 'true',
+# MAGIC   delimiter = ';'
+# MAGIC )
+# MAGIC LOCATION "${dataset.bookstore}/books-csv"
+# MAGIC -- ensure you have setup a catalog to run the query
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from books_csv_options
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The table is pointing to existing datafiles. No new datafiles is created as part of this unlike normal create table query (which is a delta table). 
+# MAGIC
+# MAGIC if you add new datafile with same format, you can see the new data if you refresh the table. 
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC describe extended  books_csv_options
+
+# COMMAND ----------
+
+display(dbutils.fs.ls(f'{dataset_bookstore}/books-csv'))
+
+# COMMAND ----------
+
+# csvschema=StructType()
+mycsv=spark.read.csv(f'{dataset_bookstore}/books-csv',sep=';',header=True)
+display(mycsv)
+mycsv.write.mode('append').csv(f'{dataset_bookstore}/books-csv')
+
+# COMMAND ----------
+
+display(dbutils.fs.ls(f'{dataset_bookstore}/books-csv'))
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from books_csv_options -- 24 records event thoough the table has more records.
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC refresh table books_csv_options
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select count(*) from books_csv_options -- 44 records after refresh.
+# MAGIC -- non delta table does not automatically provided updated data
+# MAGIC -- non delta table, you cannot time travel
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC * A Non Delta table is created using simple CREATE TABLE *tablename* with LOCATION option.
+# MAGIC * A Delta table is created when you use CTAS i.e. CREATE TABLE AS SELECT statement
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC -- SELECT *,input_file_name() FROM json.`${dataset.bookstore}/customers-json/`;
+# MAGIC
+# MAGIC CREATE TABLE customer_json_delta AS
+# MAGIC SELECT * FROM json.`${dataset.bookstore}/customers-json/`
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE EXTENDED customer_json_delta;
+
+# COMMAND ----------
+
+display(dbutils.fs.ls('dbfs:/user/hive/warehouse/customer_json_delta'))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC FOR CSV files, we can face issue creating table using CTAS as it does not allow to give specifications to the table. 
+# MAGIC In such cases, you can create a temporary table from CSV specifing the format and then load to new table using CTAS to temporary table. Thus creating a delta table from CSV with schema specification.
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DROP  TABLE IF EXISTS books_csv_temp;
+# MAGIC
+# MAGIC CREATE TEMPORARY TABLE books_csv_temp
+# MAGIC (book_id String, title String, author String, category String, price Double)
+# MAGIC USING csv
+# MAGIC OPTIONS (
+# MAGIC   header = 'true',
+# MAGIC   delimiter = ';'
+# MAGIC )
+# MAGIC LOCATION "${dataset.bookstore}/books-csv";
+# MAGIC
+# MAGIC CREATE TABLE books_csv_delta AS 
+# MAGIC SELECT * FROM books_csv_temp;
+# MAGIC
+# MAGIC DESCRIBE EXTENDED books_csv_delta;
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC WRITING TO TABLES
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE TABLE ORDERS AS
+# MAGIC SELECT * FROM parquet.`${dataset.bookstore}/orders`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from orders;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC You can update the data in the table using CORTAS - CREAT OR REPLACE TABLE AS 
+# MAGIC
+# MAGIC * This can be used for table not yet created
+# MAGIC * This is faster process
+# MAGIC * This is atomic process
+# MAGIC * This is more efficient process
+# MAGIC
+# MAGIC
+# MAGIC You can also update a table using INSERT OVERWRITE *table* 
+# MAGIC
+# MAGIC * This can only overwrite an existing table
+# MAGIC * This will only insert records which matches the format of existing table. 
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TABLE ORDERS AS
+# MAGIC SELECT * FROM parquet.`${dataset.bookstore}/orders`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE HISTORY ORDERS;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC INSERT OVERWRITE ORDERS
+# MAGIC SELECT * FROM parquet.`${dataset.bookstore}/orders`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE HISTORY ORDERS
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC UPDATING TABLE
+# MAGIC
+# MAGIC * INSERT INTO TABLE
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC INSERT INTO TABLE ORDERS
+# MAGIC SELECT * FROM parquet.`${dataset.bookstore}/orders`;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE HISTORY ORDERS;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from orders
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC INSERT RECORDS CAN ADD DUPLICACY. YOU CAN DO MERGE TO AVOID THIS
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TEMP VIEW customer_updates AS
+# MAGIC SELECT * FROM json.`${dataset.bookstore}/customers-json-new`
+# MAGIC ;
+# MAGIC
+# MAGIC MERGE INTO customers c
+# MAGIC USING customer_updates cu
+# MAGIC ON c.customer_id = cu.customer_id
+# MAGIC WHEN MATCHED AND c.email IS NULL AND cu.email IS NOT NULL
+# MAGIC   THEN UPDATE SET c.email = cu.email, c.updated = cu.updated
+# MAGIC WHEN NOT MATCHED THEN INSERT *
+# MAGIC ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE HISTORY customers;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TEMP VIEW customer_updates AS
+# MAGIC SELECT * FROM json.`${dataset.bookstore}/customers-json-new`
+# MAGIC ;
+# MAGIC
+# MAGIC MERGE INTO customers c
+# MAGIC USING customer_updates cu
+# MAGIC ON c.customer_id = cu.customer_id
+# MAGIC WHEN MATCHED AND c.email IS NULL AND cu.email IS NOT NULL
+# MAGIC   THEN UPDATE SET c.email = cu.email, c.updated = cu.updated
+# MAGIC WHEN NOT MATCHED THEN INSERT *
+# MAGIC ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM customers
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TEMP VIEW book_updates (book_id string, title	string, author	string, category	string, price	double)
+# MAGIC USING CSV
+# MAGIC OPTIONS 
+# MAGIC (
+# MAGIC   path = '${dataset.bookstore}/books-csv-new',
+# MAGIC   header = "true",
+# MAGIC   delimiter = ';'
+# MAGIC )
+# MAGIC ;
+# MAGIC
+# MAGIC select * from book_updates;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC MERGE INTO books b
+# MAGIC USING book_updates bu
+# MAGIC On b.book_id = bu.book_id
+# MAGIC WHEN NOT MATCHED  and bu.category = 'Computer Science' THEN INSERT *
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM BOOKS

@@ -17,12 +17,17 @@
 -- COMMAND ----------
 
 -- MAGIC %python
+-- MAGIC print(dataset_bookstore)
+
+-- COMMAND ----------
+
+-- MAGIC %python
 -- MAGIC files = dbutils.fs.ls(f"{dataset_bookstore}/customers-json")
 -- MAGIC display(files)
 
 -- COMMAND ----------
 
-SELECT * FROM json.`${dataset.bookstore}/customers-json/export_001.json`
+SELECT * FROM json.`${dataset.bookstore}/customers-json/export_001.json`;
 
 -- COMMAND ----------
 
@@ -68,7 +73,7 @@ SELECT * FROM binaryFile.`${dataset.bookstore}/customers-json`
 
 -- COMMAND ----------
 
-SELECT * FROM csv.`${dataset.bookstore}/books-csv`
+SELECT * FROM csv.`${dataset.bookstore}/books-csv`;
 
 -- COMMAND ----------
 
@@ -84,6 +89,10 @@ LOCATION "${dataset.bookstore}/books-csv"
 -- COMMAND ----------
 
 SELECT * FROM books_csv
+
+-- COMMAND ----------
+
+DESCRIBE DETAIL books_csv;
 
 -- COMMAND ----------
 
@@ -133,6 +142,10 @@ SELECT COUNT(*) FROM books_csv
 
 -- COMMAND ----------
 
+select COUNT(DISTINCT *) from books_csv
+
+-- COMMAND ----------
+
 -- MAGIC %md
 -- MAGIC ## CTAS Statements
 
@@ -149,6 +162,10 @@ CREATE TABLE books_unparsed AS
 SELECT * FROM csv.`${dataset.bookstore}/books-csv`;
 
 SELECT * FROM books_unparsed;
+
+-- COMMAND ----------
+
+DESCRIBE EXTENDED books_unparsed;
 
 -- COMMAND ----------
 
