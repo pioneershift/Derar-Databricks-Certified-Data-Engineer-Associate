@@ -30,6 +30,12 @@ AS SELECT * FROM  cloud_files('${datasets.path}/orders-raw','parquet', map('sche
 
 -- COMMAND ----------
 
+CREATE OR REFRESH LIVE TABLE orders_raw_json
+COMMENT "The raw books orders, ingested from orders-raw-json"
+AS SELECT * FROM json.`${datasets.path}/orders-json-raw`
+
+-- COMMAND ----------
+
 -- MAGIC %md
 -- MAGIC ###customers
 
@@ -57,10 +63,11 @@ CREATE OR REPLACE STREAMING LIVE TABLE orderes_cleaned (
 )
 COMMENT 'The cleaned book orders with valid order id'
 AS
-  SELECT order_id, quantity, o.customer_id, c.profile:first_name as f_name, c.profile:last_name as l_name,
-  cast(from_unixtime(o.order_timestamp,'yyyy-MM-dd HH:mm:ss') AS timestamp) AS order_timestamp,
+  SELECT o.order_id, o.quantity, o.customer_id, c.profile:first_name as f_name, c.profile:last_name as l_name,
+  cast(from_unixtime(o.order_timestamp,'yyyy-MM-dd HH:mm:ss') AS timestamp) AS order_timestamp,jo.books,
   c.profile:address:country as country
   FROM STREAM(LIVE.orders_raw) o
+  INNER JOIN LIVE.orders_raw_json jo
   LEFT JOIN LIVE.customers c
     on o.customer_id = c.customer_id
 
@@ -116,7 +123,3 @@ AS
 -- MAGIC display(dbutils.fs.ls('dbfs:/mnt/demo-datasets/bookstore/checkpoints/'))
 -- MAGIC display(dbutils.fs.ls('dbfs:/mnt/demo-datasets/bookstore/system/'))
 -- MAGIC display(dbutils.fs.ls('dbfs:/mnt/demo-datasets/bookstore/tables/'))
-
--- COMMAND ----------
-
-select * from hive_metastore.demo_bookstore_dlt_db.fr_daily_customer_books
