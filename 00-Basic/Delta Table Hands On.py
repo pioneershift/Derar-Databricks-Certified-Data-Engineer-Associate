@@ -325,3 +325,286 @@ display(dbutils.fs.ls('dbfs:/user/hive/warehouse/customer_json_delta'))
 
 # MAGIC %sql
 # MAGIC SELECT * FROM BOOKS
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ## ADVANCE HANDS ON
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### QUERY TO JSON FILE 
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Here the profile is of text data type. You can access the fields using colon :
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select 
+# MAGIC customer_id,
+# MAGIC email,
+# MAGIC profile:first_name,
+# MAGIC profile:last_name,
+# MAGIC profile:gender,
+# MAGIC profile:address:street,
+# MAGIC profile:address:city,
+# MAGIC profile:address:country,
+# MAGIC profile:address,
+# MAGIC profile
+# MAGIC  from customers;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Another way to access json attributes is by creating a struct type field using from_json() function. You need to mention a sample structure to this function and it will create a structure based on the sample with non null values
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select from_json(profile) from customers;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select from_json(profile
+# MAGIC , schema_of_json('{"first_name":"Inger","last_name":"Goodlip","gender":"Male","address":{"street":"898 Graceland Lane","city":"Malysheva","country":"Russia"}}')
+# MAGIC ) 
+# MAGIC AS profile_struct from customers;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TEMP VIEW parsed_customer AS
+# MAGIC select customer_id,from_json(profile, schema_of_json('{"first_name":"Inger","last_name":"Goodlip","gender":"Male","address":{"street":"898 Graceland Lane","city":"Malysheva","country":"Russia"}}')) AS profile_struct from customers;
+# MAGIC
+# MAGIC describe parsed_customer;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Once you have created json field as struct type you can access the fields using . notation
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id, profile_struct.* from parsed_customer
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id,
+# MAGIC     profile_struct.first_name,
+# MAGIC     profile_struct.last_name,
+# MAGIC     profile_struct.address.city from parsed_customer
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE TEMP VIEW parsed_customer_proper AS
+# MAGIC with parsed_customer_cte as (select customer_id,from_json(profile, schema_of_json('{"first_name":"Inger","last_name":"Goodlip","gender":"Male","address":{"street":"898 Graceland Lane","city":"Malysheva","country":"Russia"}}')) AS profile_struct from customers)
+# MAGIC select customer_id, profile_struct.* from parsed_customer_cte;
+# MAGIC
+# MAGIC describe parsed_customer_proper;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id, address, first_name from parsed_customer_proper;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Reading JSON with array of elements for a row - Use EXPLODE
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id,order_id, books from orders;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id,order_id, explode(books) as books from orders;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC with book_cte as (select customer_id,order_id, explode(books) as book from orders)
+# MAGIC select customer_id,order_id, book.book_id,book.quantity,book.subtotal from book_cte
+# MAGIC order by 1,2,3,4,5;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id, order_id, books.book_id from orders order by customer_id
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC For rows where there are repeated values, you can combine them into array using collect_set() function.
+# MAGIC It can contain array with repeated values in sub arrays so you can flatten() it and use array_distinct() to get the distinct values.
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select customer_id
+# MAGIC   ,collect_list(order_id) as order_list
+# MAGIC   , collect_set(order_id) as order_set
+# MAGIC   , collect_set(books.book_id) as book_id_set 
+# MAGIC   , flatten(collect_set(books.book_id)) as book_id_flatten
+# MAGIC   , array_distinct(flatten(collect_set(books.book_id))) as book_id_flat_distinct_array
+# MAGIC   from orders group by customer_id order by customer_id;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC
+# MAGIC with orders_flat as (
+# MAGIC   select order_id, customer_id, quantity, total, explode(books) as books from orders
+# MAGIC   order by customer_id, order_id
+# MAGIC )
+# MAGIC select * from orders_flat o
+# MAGIC inner join books b on o.books.book_id = b.book_id
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC You can also do UNION, INTERSECT, MINUS between 2 sets of data in the query
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC PIVOT - change data perspective. Columns can be set as rows and row values can be set as columns. 
+# MAGIC Specify pivot after the table name or subquery.
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC with order_flat as (select customer_id, explode(books) as books from orders)
+# MAGIC , order_for_pivot (
+# MAGIC   select customer_id
+# MAGIC       , books.book_id as bookid
+# MAGIC       , books.quantity as quantity
+# MAGIC       , books.subtotal 
+# MAGIC   from order_flat
+# MAGIC )
+# MAGIC select * from order_for_pivot
+# MAGIC -- PIVOT (
+# MAGIC --   sum(quantity) for bookid in (
+# MAGIC --     'B06','B10','B08','B07','B03','B05','B02','B11','B09','B12','B01','B04'
+# MAGIC --   )
+# MAGIC -- )
+# MAGIC
+# MAGIC ;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC with order_flat as (select customer_id, explode(books) as books from orders)
+# MAGIC , order_for_pivot (
+# MAGIC   select customer_id
+# MAGIC       , books.book_id as bookid
+# MAGIC       , books.quantity as quantity
+# MAGIC       , books.subtotal 
+# MAGIC   from order_flat
+# MAGIC )
+# MAGIC select * from order_for_pivot
+# MAGIC PIVOT (
+# MAGIC   sum(quantity) for bookid in (
+# MAGIC     'B06','B10','B08','B07','B03','B05','B02','B11','B09','B12','B01','B04'
+# MAGIC   )
+# MAGIC )
+# MAGIC ;
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC
+# MAGIC **Higher order Function and UDF
+# MAGIC * FILTER *filter(array, lambda_function): Returns an array of elements for which the lambda function returns true.*
+# MAGIC * TRANSFORM *transform(array, lambda_function): Applies the lambda function to each element in the input array and returns an array of the result.*
+# MAGIC * EXISTS *exists(array, lambda_function): Returns true if the lambda function returns true for any element in the array.*
+# MAGIC
+# MAGIC
+# MAGIC
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select books.book_id, books.quantity,
+# MAGIC   FILTER(books, i -> i.quantity >= 2) as multiple_copies,
+# MAGIC   * from orders
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select * from 
+# MAGIC (
+# MAGIC   select books.book_id, books.quantity,
+# MAGIC   FILTER(books, i -> i.quantity >= 2) as multiple_copies,
+# MAGIC   * from orders
+# MAGIC ) res
+# MAGIC WHERE size(multiple_copies) >0;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select order_id, books,
+# MAGIC TRANSFORM(books, i -> i.subtotal*0.8) as subtotal_after_discount
+# MAGIC from orders;
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##UDF
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC CREATE OR REPLACE FUNCTION get_url(email STRING)
+# MAGIC RETURNS STRING
+# MAGIC
+# MAGIC RETURN CONCAT ('http://www.',split(email, '@')[1])
+# MAGIC ;
+# MAGIC
+# MAGIC CREATE OR REPLACE FUNCTION get_site(email STRING)
+# MAGIC RETURNS STRING
+# MAGIC
+# MAGIC RETURN  CASE 
+# MAGIC           WHEN email like '%.com' THEN 'Commercial Business'
+# MAGIC           WHEN email like '%.org' THEN 'Non Profit Organisation'
+# MAGIC           WHEN email like '%.edu' THEN 'Educational Institute'
+# MAGIC           WHEN email like '%.gov' THEN 'Government Sector'
+# MAGIC           ELSE CONCAT('Unknow Extenstion ',SPLIT(email,'@')[1])
+# MAGIC         END;
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC select email,get_url(email) as url_address, get_site(email) as site_type from customers
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE FUNCTION GET_URL
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DESCRIBE FUNCTION EXTENDED GET_URL
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC DROP FUNCTION get_url;
+# MAGIC DROP FUNCTION get_site;
